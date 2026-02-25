@@ -40,6 +40,24 @@
       <input type="checkbox" id="enabled" checked> Enable Filter
     </label>
   </div>
+  <div class="control-group">
+    <label>
+      <input type="checkbox" id="localOnly"> Only for local files
+    </label>
+  </div>
+  <div class="control-group">
+    <label>
+      <input type="checkbox" id="paperTexture"> Paper Texture
+    </label>
+  </div>
+  <div class="control-group" id="textureIntensityGroup">
+    <label for="textureIntensity">Texture Intensity:</label>
+    <input type="range" id="textureIntensity" min="0" max="100" value="25">
+  </div>
+  <div class="control-group" id="textureScaleGroup">
+    <label for="textureScale">Texture Scale:</label>
+    <input type="range" id="textureScale" min="10" max="200" value="100">
+  </div>
   <p class="status">Note: Refresh the PDF page after changing settings.</p>
   <script src="popup.js"></script>
 </body>

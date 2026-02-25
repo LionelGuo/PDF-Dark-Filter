@@ -18,5 +18,11 @@
       "run_at": "document_start",
       "all_frames": true
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["paper.jpg"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }
