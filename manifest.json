@@ -14,7 +14,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["pdf-lib.min.js", "content.js"],
+      "js": ["three.min.js", "vanta.waves.min.js", "pdf-lib.min.js", "content.js"],
       "run_at": "document_start",
       "all_frames": true
     }
