@@ -24,6 +24,7 @@
     const style = document.createElement('style');
     style.id = 'pdf-filter-initial-style';
     style.innerHTML = `
+      @import url('https://fonts.googleapis.com/css2?family=Anton&display=swap');
       html, body { background: #222 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
       #pdf-loading-overlay {
         position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -32,13 +33,46 @@
         transition: opacity ${FADE_DURATION}ms ease;
         background: #222;
       }
+      .loading-branding {
+        position: absolute;
+        bottom: 50px;
+        right: 50px;
+        display: flex;
+        user-select: none;
+        opacity: 0;
+        animation: branding-settle 0.4s ease-out forwards;
+        animation-delay: 0.1s;
+      }
+      .loading-branding span {
+        font-family: 'Anton', 'Arial Black', sans-serif;
+        font-size: 60px;
+        text-shadow: -10px 5px 20px rgba(0, 0, 0, 0.5);
+        color: white;
+        letter-spacing: 0em;
+        line-height: 1;
+        display: inline-block;
+      }
+      @keyframes branding-settle {
+        from { opacity: 0; }
+        to { opacity: 0.5; }
+      }
     `;
     document.documentElement.appendChild(style);
 
     const overlay = document.createElement('div');
     overlay.id = 'pdf-loading-overlay';
     overlay.style.opacity = OVERLAY_ALPHA;
-    overlay.innerHTML = `<div style="display: ${SHOW_LOADING_TEXT ? 'block' : 'none'}; color: white; font-family: sans-serif;">Initializing...</div>`;
+    
+    // 将文字拆分为 span 以实现层叠阴影效果
+    const text = "LOADING FILTERS";
+    const spanWrappedText = text.split('').map(char => 
+      `<span>${char === ' ' ? '&nbsp;' : char}</span>`
+    ).join('');
+
+    overlay.innerHTML = `
+      <div style="display: ${SHOW_LOADING_TEXT ? 'block' : 'none'}; color: white; font-family: sans-serif;">Initializing...</div>
+      <div class="loading-branding">${spanWrappedText}</div>
+    `;
     document.documentElement.appendChild(overlay);
   };
 
@@ -50,8 +84,8 @@
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
-    const baseGray = 90;
-    const mix = 0.35;
+    const baseGray = 130;
+    const mix = 0.25;
     const finalR = Math.round(baseGray * (1 - mix) + r * mix);
     const finalG = Math.round(baseGray * (1 - mix) + g * mix);
     const finalB = Math.round(baseGray * (1 - mix) + b * mix);
@@ -80,14 +114,13 @@
       'localOnly', 
       'paperTexture', 
       'textureIntensity', 
-      'textureScale'
+      'textureScale',
+      'compatibilityMode'
     ], async (result) => {
-      // 核心开关逻辑
       const isGlobalEnabled = result.mainSwitch !== false;
       const isLocalOnly = result.localOnly === true;
       const isLocalFile = window.location.protocol === 'file:';
 
-      // 如果总开关关闭，或者启用了“仅本地”但当前是网页 PDF，则退出
       if (!isGlobalEnabled || (isLocalOnly && !isLocalFile)) {
         cleanup();
         return;
@@ -95,17 +128,16 @@
 
       const useColorFilter = result.colorFilterEnabled !== false;
       const useTexture = result.paperTexture !== false;
+      const isCompMode = result.compatibilityMode === true;
       const bgColor = result.pdfBgColor || '#b9b5b1';
       const textureIntensity = parseInt(result.textureIntensity || 25);
       const textureScale = parseInt(result.textureScale || 100);
 
-      // 如果两个功能都关了，也没必要处理
       if (!useColorFilter && !useTexture) {
         cleanup();
         return;
       }
 
-      // 启动 Vanta
       if (typeof VANTA !== 'undefined' && VANTA.WAVES) {
         try {
           vantaEffect = VANTA.WAVES({
@@ -113,7 +145,7 @@
             mouseControls: true,
             touchControls: true,
             color: getOptimizedVantaColor(bgColor),
-            shininess: 25,
+            shininess: 30,
             waveHeight: 20,
             waveSpeed: 0.6,
             zoom: 0.9
@@ -137,8 +169,8 @@
           const { PDFDocument, rgb, BlendMode } = PDFLib;
           const pdfDoc = await PDFDocument.load(arrayBuffer);
           
-          // 仅在色彩滤镜开启时处理页面颜色
-          if (useColorFilter) {
+          // 仅在 非兼容模式 且 开启色彩滤镜 时，物理修改 PDF
+          if (!isCompMode && useColorFilter) {
             const hexToRgb = (hex) => {
               const r = parseInt(hex.slice(1, 3), 16) / 255;
               const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -166,7 +198,7 @@
             const waitForBody = setInterval(() => {
               if (document.body) {
                 clearInterval(waitForBody);
-                injectFinalPdf(newUrl, bgColor, useTexture, textureIntensity, textureScale);
+                injectFinalPdf(newUrl, bgColor, useTexture, textureIntensity, textureScale, isCompMode, useColorFilter);
               }
             }, 50);
           });
@@ -179,7 +211,7 @@
     });
   }
 
-  function injectFinalPdf(url, bgColor, useTexture, textureIntensity, textureScale) {
+  function injectFinalPdf(url, bgColor, useTexture, textureIntensity, textureScale, isCompMode, useColorFilter) {
     const container = document.createElement('div');
     container.style.cssText = 'position:relative; width:100vw; height:100vh; overflow:hidden;';
 
@@ -189,16 +221,32 @@
     embed.style.cssText = 'width:100%; height:100%; border:none; display:block;';
     container.appendChild(embed);
 
-    if (useTexture) {
-      const texture = document.createElement('div');
-      texture.style.cssText = `
+    // 渲染颜色滤镜层 (仅在兼容模式且开启滤镜时)
+    if (isCompMode && useColorFilter) {
+      const colorOverlay = document.createElement('div');
+      colorOverlay.style.cssText = `
         position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-        z-index: 100; pointer-events: none; opacity: ${textureIntensity / 100};
-        background-image: url("${chrome.runtime.getURL('paper.jpg')}");
-        background-repeat: repeat; background-size: ${textureScale}%;
+        z-index: 100; pointer-events: none;
+        background-color: ${bgColor};
         mix-blend-mode: multiply;
+        opacity: 1;
       `;
-      container.appendChild(texture);
+      container.appendChild(colorOverlay);
+    }
+
+    // 渲染纸张纹理层 (只要开启纹理就渲染，不论是否兼容模式)
+    if (useTexture) {
+      const textureOverlay = document.createElement('div');
+      textureOverlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        z-index: 101; pointer-events: none;
+        background-image: url("${chrome.runtime.getURL('paper.jpg')}");
+        background-repeat: repeat;
+        background-size: ${textureScale}%;
+        mix-blend-mode: multiply;
+        opacity: ${textureIntensity / 100};
+      `;
+      container.appendChild(textureOverlay);
     }
 
     document.body.innerHTML = '';

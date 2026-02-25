@@ -125,6 +125,28 @@
       text-align: center;
       line-height: 1.4;
     }
+    .refresh-btn {
+      width: 100%;
+      padding: 12px;
+      background-color: var(--primary-color);
+      color: #1e1e1e;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 14px;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 15px;
+    }
+    .refresh-btn:hover {
+      opacity: 0.9;
+    }
+    .refresh-btn:active {
+      transform: scale(0.98);
+    }
   </style>
 </head>
 <body>
@@ -177,6 +199,17 @@
       </div>
     </div>
 
+    <!-- 兼容模式选项 -->
+    <div class="control-group">
+      <label title="CSS Overlay mode: Safe for saving annotations but tints the UI.">
+        <input type="checkbox" id="compatibilityMode"> 
+        <strong>Compatibility Mode</strong>
+      </label>
+      <p style="font-size: 10px; color: var(--text-secondary); margin: 5px 0 0 25px; line-height: 1.4;">
+        If you need to annotate or modify a file, be sure to <span style="color: var(--primary-color); font-weight: bold;">enable compatibility mode to avoid background staining</span>. This mode uses a global mask, which offers better performance, but will obscure the toolbar and all annotations.
+      </p>
+    </div>
+
     <!-- 本地文件限制 -->
     <div class="control-group">
       <label title="Only apply effects to local file:/// URLs">
@@ -186,7 +219,11 @@
     </div>
   </div>
 
-  <p class="status">Settings sync automatically.<br>Refresh PDF to apply changes.</p>
+  <button id="refreshBtn" class="refresh-btn">
+    Apply and Refresh
+  </button>
+
+  <!-- <p class="status">Settings sync automatically.<br>Refresh PDF to apply changes.</p> -->
 
   <script src="popup.js"></script>
 </body>

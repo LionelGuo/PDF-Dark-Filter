@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const textureScaleSlider = document.getElementById('textureScale');
   const textureScaleValue = document.getElementById('scaleValue');
   
+  const compatibilityModeCheckbox = document.getElementById('compatibilityMode');
   const localOnlyCheckbox = document.getElementById('localOnly');
 
   let saveTimeout = null;
@@ -48,7 +49,8 @@ document.addEventListener('DOMContentLoaded', () => {
       localOnly: localOnlyCheckbox.checked,
       paperTexture: paperTextureCheckbox.checked,
       textureIntensity: parseInt(textureIntensitySlider.value),
-      textureScale: parseInt(textureScaleSlider.value)
+      textureScale: parseInt(textureScaleSlider.value),
+      compatibilityMode: compatibilityModeCheckbox.checked
     });
   };
 
@@ -69,15 +71,16 @@ document.addEventListener('DOMContentLoaded', () => {
     'localOnly', 
     'paperTexture', 
     'textureIntensity', 
-    'textureScale'
+    'textureScale',
+    'compatibilityMode'
   ], (result) => {
     if (result.mainSwitch !== undefined) mainSwitch.checked = result.mainSwitch;
     if (result.colorFilterEnabled !== undefined) colorFilterCheckbox.checked = result.colorFilterEnabled;
     if (result.pdfBgColor) colorPicker.value = result.pdfBgColor;
     if (result.localOnly !== undefined) localOnlyCheckbox.checked = result.localOnly;
     if (result.paperTexture !== undefined) paperTextureCheckbox.checked = result.paperTexture;
+    if (result.compatibilityMode !== undefined) compatibilityModeCheckbox.checked = result.compatibilityMode;
     
-    // 确保数值在合法范围内（处理旧版数据兼容性）
     if (result.textureIntensity !== undefined) {
       textureIntensitySlider.value = result.textureIntensity;
     }
@@ -89,20 +92,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 绑定事件
-  // 开关类：立即保存
-  [mainSwitch, colorFilterCheckbox, paperTextureCheckbox, localOnlyCheckbox].forEach(el => {
+  [mainSwitch, colorFilterCheckbox, paperTextureCheckbox, localOnlyCheckbox, compatibilityModeCheckbox].forEach(el => {
     el.addEventListener('change', () => {
       updateUIState();
       saveSettings();
     });
   });
   
-  // 颜色选择器：立即保存
   colorPicker.addEventListener('input', () => {
     saveSettings();
   });
 
-  // 预设颜色按钮
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       colorPicker.value = btn.dataset.color;
@@ -110,8 +110,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 滑动条：防抖保存
   [textureIntensitySlider, textureScaleSlider].forEach(el => {
     el.addEventListener('input', debouncedSave);
+  });
+
+  // 保存并刷新按钮
+  document.getElementById('refreshBtn').addEventListener('click', () => {
+    saveSettings();
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.reload(tabs[0].id);
+      }
+    });
   });
 });
