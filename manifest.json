@@ -1,27 +1,40 @@
 {
   "manifest_version": 3,
-  "name": "Edge PDF Eye Protector",
+  "name": "PDF Dark Filter",
   "version": "1.0",
-  "description": "Adjust PDF background color for a better reading experience.",
+  "short description": "Adjust PDF background color for a better reading experience.",
+  "description": "PDF Filler for Edge reduces eye strain by using smart color blending to replace harsh inversions with a paper-like background.",
+  "icons": {
+    "16": "assets/icons/pdf-filter.png",
+    "48": "assets/icons/pdf-filter.png",
+    "128": "assets/icons/pdf-filter.png"
+  },
   "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": ["<all_urls>"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background.js"
   },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/pdf-filter.png",
+      "48": "assets/icons/pdf-filter.png",
+      "128": "assets/icons/pdf-filter.png"
+    }
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["three.min.js", "vanta.waves.min.js", "pdf-lib.min.js", "content.js"],
+      "js": [
+        "src/content.js"
+      ],
       "run_at": "document_start",
       "all_frames": true
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["paper.jpg"],
+      "resources": ["assets/textures/paper.jpg"],
       "matches": ["<all_urls>"]
     }
   ]
