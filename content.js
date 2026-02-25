@@ -1,12 +1,10 @@
 (async function() {
   if (window.location.protocol === 'blob:') return;
 
-  // --- 配置变量 ---
   const FADE_START_DELAY = 500; 
   const FADE_DURATION = 1500;    
   const OVERLAY_ALPHA = 1.0;      
   const SHOW_LOADING_TEXT = false; 
-  // --------------
 
   let vantaEffect = null;
   let processingStarted = false;
@@ -44,31 +42,19 @@
     document.documentElement.appendChild(overlay);
   };
 
-  // 立即尝试拦截
   if (window.location.href.toLowerCase().includes('.pdf')) {
     injectOverlayOnce();
   }
 
-  /**
-   * 极简色彩优化算法：线性插值混合 (Lerp)
-   * 性能消耗极低，避免了 HSL 转换带来的逻辑分支
-   */
   const getOptimizedVantaColor = (hex) => {
-    // 解析用户颜色
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
-
-    // 预设中性灰基准 (targetL = 0.55 对应约 140/255)
-    const baseGray = 140;
-    // 低饱和度混合因子 (targetS = 0.25 对应约 25% 的颜色偏移)
-    const mix = 0.25;
-
-    // 线性混合：result = base * (1 - mix) + user * mix
+    const baseGray = 90;
+    const mix = 0.35;
     const finalR = Math.round(baseGray * (1 - mix) + r * mix);
     const finalG = Math.round(baseGray * (1 - mix) + g * mix);
     const finalB = Math.round(baseGray * (1 - mix) + b * mix);
-
     return (finalR << 16) | (finalG << 8) | finalB;
   };
 
@@ -84,18 +70,37 @@
         processPdf();
       }
     }
-  }, 100); // 降低探测频率至 100ms 以释放 CPU
+  }, 100);
 
   async function processPdf() {
-    chrome.storage.sync.get(['pdfBgColor', 'pdfFilterEnabled', 'localOnly', 'paperTexture', 'textureIntensity', 'textureScale'], async (result) => {
-      const isEnabled = result.pdfFilterEnabled !== false;
-      const bgColor = result.pdfBgColor || '#d3d3d3';
-      const localOnly = result.localOnly === true;
-      const useTexture = result.paperTexture === true;
-      const textureIntensity = parseInt(result.textureIntensity || 4);
+    chrome.storage.sync.get([
+      'mainSwitch',
+      'colorFilterEnabled',
+      'pdfBgColor', 
+      'localOnly', 
+      'paperTexture', 
+      'textureIntensity', 
+      'textureScale'
+    ], async (result) => {
+      // 核心开关逻辑
+      const isGlobalEnabled = result.mainSwitch !== false;
+      const isLocalOnly = result.localOnly === true;
+      const isLocalFile = window.location.protocol === 'file:';
+
+      // 如果总开关关闭，或者启用了“仅本地”但当前是网页 PDF，则退出
+      if (!isGlobalEnabled || (isLocalOnly && !isLocalFile)) {
+        cleanup();
+        return;
+      }
+
+      const useColorFilter = result.colorFilterEnabled !== false;
+      const useTexture = result.paperTexture !== false;
+      const bgColor = result.pdfBgColor || '#b9b5b1';
+      const textureIntensity = parseInt(result.textureIntensity || 25);
       const textureScale = parseInt(result.textureScale || 100);
 
-      if (!isEnabled || (localOnly && window.location.protocol !== 'file:')) {
+      // 如果两个功能都关了，也没必要处理
+      if (!useColorFilter && !useTexture) {
         cleanup();
         return;
       }
@@ -107,7 +112,7 @@
             el: "#pdf-loading-overlay",
             mouseControls: true,
             touchControls: true,
-            color: getOptimizedVantaColor(bgColor), // 使用超轻量级计算
+            color: getOptimizedVantaColor(bgColor),
             shininess: 25,
             waveHeight: 20,
             waveSpeed: 0.6,
@@ -126,36 +131,37 @@
         }
 
         try {
-          // 使用高效的原生流处理
           const res = await fetch(response.data);
           const arrayBuffer = await res.arrayBuffer();
 
           const { PDFDocument, rgb, BlendMode } = PDFLib;
           const pdfDoc = await PDFDocument.load(arrayBuffer);
           
-          const hexToRgb = (hex) => {
-            const r = parseInt(hex.slice(1, 3), 16) / 255;
-            const g = parseInt(hex.slice(3, 5), 16) / 255;
-            const b = parseInt(hex.slice(5, 7), 16) / 255;
-            return rgb(r, g, b);
-          };
-          const fillColor = hexToRgb(bgColor);
+          // 仅在色彩滤镜开启时处理页面颜色
+          if (useColorFilter) {
+            const hexToRgb = (hex) => {
+              const r = parseInt(hex.slice(1, 3), 16) / 255;
+              const g = parseInt(hex.slice(3, 5), 16) / 255;
+              const b = parseInt(hex.slice(5, 7), 16) / 255;
+              return rgb(r, g, b);
+            };
+            const fillColor = hexToRgb(bgColor);
 
-          const pages = pdfDoc.getPages();
-          pages.forEach((page) => {
-            const { width, height } = page.getSize();
-            page.drawRectangle({
-              x: 0, y: 0, width: width, height: height,
-              color: fillColor,
-              blendMode: BlendMode.Multiply
+            const pages = pdfDoc.getPages();
+            pages.forEach((page) => {
+              const { width, height } = page.getSize();
+              page.drawRectangle({
+                x: 0, y: 0, width: width, height: height,
+                color: fillColor,
+                blendMode: BlendMode.Multiply
+              });
             });
-          });
+          }
 
           const pdfBytes = await pdfDoc.save();
           const blob = new Blob([pdfBytes], { type: 'application/pdf' });
           const newUrl = URL.createObjectURL(blob);
           
-          // 确保在主线程空闲时注入 PDF
           requestAnimationFrame(() => {
             const waitForBody = setInterval(() => {
               if (document.body) {
