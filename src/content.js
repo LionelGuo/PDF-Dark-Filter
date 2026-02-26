@@ -180,8 +180,8 @@
     const useColorFilter = result.colorFilterEnabled !== false;
     const useTexture = result.paperTexture !== false;
     const isCompMode = result.compatibilityMode === true;
-    const bgColor = result.pdfBgColor || '#b9b5b1';
-    const textureIntensity = parseInt(result.textureIntensity || 25);
+    const bgColor = result.pdfBgColor || '#b6b3af';
+    const textureIntensity = parseInt(result.textureIntensity || 50);
     const textureScale = parseInt(result.textureScale || 100);
 
     if (!useColorFilter && !useTexture) {
