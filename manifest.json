@@ -9,7 +9,7 @@
     "48": "assets/icons/pdf-filter.png",
     "128": "assets/icons/pdf-filter.png"
   },
-  "permissions": ["storage", "scripting", "activeTab"],
+  "permissions": ["storage", "scripting", "activeTab", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background.js"
@@ -34,7 +34,11 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/textures/paper.jpg"],
+      "resources": [
+        "assets/textures/paper.jpg",
+        "src/pdf-worker.js",
+        "lib/pdf-lib.min.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

@@ -124,7 +124,6 @@
 
         const filesToLoad = [];
         if (!isCompMode) {
-          filesToLoad.push('lib/pdf-lib.min.js');
           if (useAnimation) {
             filesToLoad.push('lib/three.min.js');
             filesToLoad.push('lib/vanta.waves.min.js');
@@ -138,11 +137,10 @@
               let attempts = 0;
               const checkLibs = setInterval(() => {
                 attempts++;
-                const pdflib = typeof PDFLib !== 'undefined' ? PDFLib : window.PDFLib;
                 const three = (typeof THREE !== 'undefined' || !useAnimation);
                 const vanta = (typeof VANTA !== 'undefined' || !useAnimation);
 
-                if (pdflib && three && vanta) {
+                if (three && vanta) {
                   console.log('[PDF-Filter] Required libraries ready after', attempts * 30, 'ms');
                   clearInterval(checkLibs);
                   processPdf(result);
@@ -209,65 +207,87 @@
       }
     }
 
-    chrome.runtime.sendMessage({ type: 'FETCH_PDF', url: window.location.href }, async (response) => {
-      if (!response || !response.success || !response.data) {
-        console.error('[PDF-Filter] Fetch failed or no data:', response?.error);
-        cleanup();
-        return;
-      }
-
+    const getPdfData = async () => {
       try {
-        let finalUrl;
-
-        if (!isCompMode && useColorFilter) {
-          const pdflib = typeof PDFLib !== 'undefined' ? PDFLib : window.PDFLib;
-          if (!pdflib) throw new Error('PDFLib not found in Native Mode');
-          
-          console.log('[PDF-Filter] Modifying PDF bytes (Native Mode)...');
-          const { PDFDocument, rgb, BlendMode } = pdflib;
-          const uint8 = new Uint8Array(response.data);
-          const pdfDoc = await PDFDocument.load(uint8);
-          const hexToRgb = (hex) => {
-            const r = parseInt(hex.slice(1, 3), 16) / 255;
-            const g = parseInt(hex.slice(3, 5), 16) / 255;
-            const b = parseInt(hex.slice(5, 7), 16) / 255;
-            return rgb(r, g, b);
-          };
-          const fillColor = hexToRgb(bgColor);
-
-          const pages = pdfDoc.getPages();
-          pages.forEach((page) => {
-            const { width, height } = page.getSize();
-            page.drawRectangle({
-              x: 0, y: 0, width: width, height: height,
-              color: fillColor,
-              blendMode: BlendMode.Multiply
-            });
+        console.log('[PDF-Filter] Attempting direct fetch...');
+        const res = await fetch(window.location.href);
+        const buffer = await res.arrayBuffer();
+        return new Uint8Array(buffer);
+      } catch (e) {
+        console.log('[PDF-Filter] Direct fetch failed (CORS?), falling back to background...');
+        return new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({ type: 'FETCH_PDF', url: window.location.href }, (response) => {
+            if (response && response.success && response.data) {
+              const binary = atob(response.data);
+              const uint8 = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) {
+                uint8[i] = binary.charCodeAt(i);
+              }
+              resolve(uint8);
+            } else {
+              reject(new Error(response?.error || 'Background fetch failed'));
+            }
           });
+        });
+      }
+    };
 
-          const pdfBytes = await pdfDoc.save();
-          const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-          finalUrl = URL.createObjectURL(blob);
+    getPdfData().then(async (uint8) => {
+      console.log('[PDF-Filter] PDF data ready. Size:', uint8.length);
+      
+      try {
+        if (!isCompMode && useColorFilter) {
+          console.log('[PDF-Filter] Preparing Worker...');
+          const workerUrl = chrome.runtime.getURL('src/pdf-worker.js');
+          const workerResponse = await fetch(workerUrl);
+          const workerCode = await workerResponse.text();
+          const blob = new Blob([workerCode], { type: 'application/javascript' });
+          const worker = new Worker(URL.createObjectURL(blob));
+          
+          worker.postMessage({ 
+            pdfData: uint8, 
+            bgColor: bgColor,
+            useColorFilter: true,
+            libUrl: chrome.runtime.getURL('lib/pdf-lib.min.js')
+          }, [uint8.buffer]);
+
+          worker.onmessage = function(e) {
+            if (e.data.success) {
+              const blobUrl = URL.createObjectURL(new Blob([e.data.pdfBytes], { type: 'application/pdf' }));
+              finishProcessing(blobUrl);
+            } else {
+              console.error('[PDF-Filter] Worker Error:', e.data.error);
+              cleanup();
+            }
+            worker.terminate();
+          };
+          worker.onerror = (err) => {
+            console.error('[PDF-Filter] Worker Thread Error:', err);
+            cleanup();
+          };
         } else {
           console.log('[PDF-Filter] Using CSS overlay (Compatibility Mode)...');
-          const uint8 = new Uint8Array(response.data);
-          const blob = new Blob([uint8], { type: 'application/pdf' });
-          finalUrl = URL.createObjectURL(blob);
+          const blobUrl = URL.createObjectURL(new Blob([uint8], { type: 'application/pdf' }));
+          finishProcessing(blobUrl);
         }
-        
-        requestAnimationFrame(() => {
-          const waitForBody = setInterval(() => {
-            if (document.body) {
-              clearInterval(waitForBody);
-              injectFinalPdf(finalUrl, bgColor, useTexture, textureIntensity, textureScale, isCompMode, useColorFilter);
-            }
-          }, 50);
-        });
 
+        function finishProcessing(finalUrl) {
+          requestAnimationFrame(() => {
+            const waitForBody = setInterval(() => {
+              if (document.body) {
+                clearInterval(waitForBody);
+                injectFinalPdf(finalUrl, bgColor, useTexture, textureIntensity, textureScale, isCompMode, useColorFilter);
+              }
+            }, 50);
+          });
+        }
       } catch (e) {
         console.error('[PDF-Filter] Processing Error:', e);
         cleanup();
       }
+    }).catch(err => {
+      console.error('[PDF-Filter] Data retrieval failed:', err);
+      cleanup();
     });
   }
 
@@ -276,7 +296,6 @@
     
     const container = document.createElement('div');
     container.id = 'pdf-filter-container';
-    // Base container style: NO background color here, as it may block the embed
     container.style.cssText = `
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
       overflow: hidden; z-index: 2147483646;
@@ -287,11 +306,9 @@
     const embed = document.createElement('embed');
     embed.src = url;
     embed.type = 'application/pdf';
-    // Use transform to force hardware acceleration layer, helping mix-blend-mode compatibility
     embed.style.cssText = 'width:100%; height:100%; border:none; display:block; transform: translateZ(0);';
     container.appendChild(embed);
 
-    // Apply color filter as a TOP OVERLAY (Compatibility Mode)
     if (isCompMode && useColorFilter) {
       const colorOverlay = document.createElement('div');
       colorOverlay.style.cssText = `
@@ -303,7 +320,6 @@
       container.appendChild(colorOverlay);
     }
 
-    // Apply texture as a TOP OVERLAY (Both modes)
     if (useTexture) {
       const textureOverlay = document.createElement('div');
       textureOverlay.style.cssText = `
@@ -320,24 +336,17 @@
 
     document.body.innerHTML = '';
     document.body.appendChild(container);
-    console.log('[PDF-Filter] DOM updated.');
-    console.log('[PDF-Filter] Body cleared and container injected.');
 
     setTimeout(() => {
       const overlay = document.getElementById('pdf-loading-overlay');
       if (overlay) {
-        console.log('[PDF-Filter] Removing loading overlay...');
         overlay.style.opacity = '0';
         overlay.style.pointerEvents = 'none'; 
         setTimeout(() => {
-          if (vantaEffect) {
-            console.log('[PDF-Filter] Destroying Vanta effect...');
-            vantaEffect.destroy();
-          }
+          if (vantaEffect) vantaEffect.destroy();
           overlay.remove();
           const style = document.getElementById('pdf-filter-initial-style');
           if (style) {
-            console.log('[PDF-Filter] Finalizing styles...');
             style.innerHTML = `html, body { background: ${bgColor} !important; margin: 0; overflow: hidden; }`;
           }
         }, FADE_DURATION); 

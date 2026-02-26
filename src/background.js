@@ -26,12 +26,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'FETCH_PDF') {
     fetch(request.url)
-      .then(response => response.arrayBuffer())
-      .then(buffer => {
-        // Convert ArrayBuffer to Uint8Array for messaging stability
-        const uint8 = new Uint8Array(buffer);
-        // We send it as a regular array if structured clone fails, but Uint8Array is supported
-        sendResponse({ success: true, data: Array.from(uint8) });
+      .then(response => response.blob())
+      .then(blob => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          // Convert to Base64 string for reliable cross-context transfer
+          const base64data = reader.result.split(',')[1];
+          sendResponse({ success: true, data: base64data });
+        };
+        reader.onerror = (err) => {
+          sendResponse({ success: false, error: 'FileReader error' });
+        };
+        reader.readAsDataURL(blob);
       })
       .catch(error => {
         console.error('Fetch error:', error);

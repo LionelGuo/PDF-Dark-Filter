@@ -33,7 +33,7 @@ This project relies on the following excellent open-source libraries:
 
 1.  Clone this repository:
     ```bash
-    git clone https://github.com/yourusername/PDF-Dark-Filter.git
+    git clone https://github.com/LionelGuo/PDF-Dark-Filter.git
     ```
 2.  Open Microsoft Edge and navigate to `edge://extensions/`.
 3.  Enable **"Developer mode"** in the bottom left corner.
